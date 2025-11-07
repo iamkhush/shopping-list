@@ -1,0 +1,187 @@
+---
+- name: Deploy Shopping List Application
+  hosts: localhost
+  connection: local
+  become: yes
+  gather_facts: no
+  vars:
+    app_name: shopping-list
+    app_user: iamkhush
+    project_dir: "/home/{{ app_user }}/projects/{{ app_name }}"
+    venv_dir: "{{ project_dir }}/.venv"
+    db_name: shopping-list
+    db_user: iamkhush
+    server_name: "{{ lookup('env', 'SERVER_NAME') | default('chaddas.home', true) }}"
+    script_name: /{{ app_name }}
+    ansible_become_method: sudo
+    ansible_become_flags: '-H -S'
+    nginx_user: nginx
+    static_root: /static/{{ app_name }}
+
+  tasks:
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      tags: system
+
+    - name: Install required packages
+      apt:
+        name:
+          - go
+          - postgresql-contrib
+          - nginx
+          - git
+          - python3-psycopg2
+        state: present
+      tags: system
+
+    - name: Start and enable PostgreSQL
+      systemd:
+        name: postgresql
+        state: started
+        enabled: yes
+      tags: database
+
+    - name: Check if database exists
+      postgresql_query:
+        db: postgres
+        query: "SELECT 1 FROM pg_database WHERE datname='{{ db_name }}'"
+      become_user: postgres
+      register: db_exists
+      tags: database
+
+    - name: Create PostgreSQL database
+      postgresql_db:
+        name: "{{ db_name }}"
+        state: present
+      become_user: postgres
+      when: db_exists.rowcount == 0
+      tags: database
+
+    - name: Check if database user exists
+      postgresql_query:
+        db: postgres
+        query: "SELECT 1 FROM pg_user WHERE usename='{{ db_user }}'"
+      become_user: postgres
+      register: user_exists
+      tags: database
+
+    - name: Create PostgreSQL user
+      postgresql_user:
+        name: "{{ db_user }}"
+        password: "{{ db_password }}"
+        priv: "{{ db_name }}:ALL"
+        state: present
+      become_user: postgres
+      when: user_exists.rowcount == 0
+      tags: database
+
+    - name: Create project directory
+      file:
+        path: "{{ project_dir }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+      become: no
+      tags: project
+
+    - name: Ensure all parent directories for static files exist
+      file:
+        path: /static
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ nginx_user }}"
+        mode: '0755'
+      become: yes
+      tags: static
+
+    - name: Create static files directory
+      file:
+        path: "{{ static_root }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ nginx_user }}"
+        mode: '0755'
+      become: yes
+      tags: static
+
+    - name: Copy static files
+      copy:
+        src: "{{ project_dir }}/static"
+        dest: "{{ static_root }}/"
+        owner: "{{ app_user }}"
+        group: "{{ nginx_user }}"
+        mode: '0755'
+      become: yes
+      tags: static
+
+    - name: Generate Nginx location from template
+      template:
+        src: location.conf.j2
+        dest: /etc/nginx/conf.d/shopping-list.location
+        owner: root
+        group: root
+        mode: '0644'
+      notify: reload nginx
+      tags: nginx
+
+    - name: Read and display the generated Nginx config for debugging
+      command: cat /etc/nginx/conf.d/shopping-list.location
+      register: nginx_config_content
+      changed_when: false
+      tags: nginx
+
+    - name: Print Nginx config content
+      debug: var=nginx_config_content.stdout_lines
+      tags: nginx
+
+    - name: Test Nginx configuration
+      command: nginx -t
+      register: nginx_test
+      changed_when: false
+      tags: nginx
+      
+    - name: Build Go application
+      command: go build -o "{{ project_dir }}/shopping-list" "{{ project_dir }}/main.go"
+      args:
+        chdir: "{{ project_dir }}"
+      become: no
+      tags: build
+    
+    - name: Generate systemd service from template
+      template:
+        src: shopping-list.service.j2
+        dest: "/etc/systemd/system/{{app_name}}.service"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart shopping-list service
+      tags: systemd-service
+
+    - name: Start and enable services
+      systemd:
+        name: "{{ item.name }}"
+        state: "{{ item.state }}"
+        enabled: yes
+        daemon_reload: yes
+      loop:
+        - { name: 'nginx', state: 'started' }
+        - { name: '{{ app_name }}', state: 'restarted' }
+      tags: services
+
+  handlers:
+    - name: reload nginx
+      systemd:
+        name: nginx
+        state: reloaded
+
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: restart shopping-list service
+      systemd:
+        name: "{{ app_name }}"
+        state: restarted
+        daemon_reload: yes

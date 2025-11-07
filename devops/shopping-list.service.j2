@@ -1,0 +1,14 @@
+[Unit]
+Description={{ app_name }} daemon
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User={{ app_user }}
+WorkingDirectory={{ project_dir }}
+ExecStart={{ project_dir }}/{{ app_name }}
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
