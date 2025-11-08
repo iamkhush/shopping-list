@@ -1,5 +1,6 @@
 // API endpoints
-const API_URL = 'https://chaddas.home/shopping-list/api';
+const API_URL = '/shopping-list/api';
+const OFFLINE_ITEMS_KEY = 'shopping-list-offline-items';
 
 // DOM Elements
 const shoppingList = document.getElementById('shopping-list');
@@ -9,22 +10,45 @@ const toggleFilterBtn = document.getElementById('toggleFilter');
 // State
 let showUncheckedOnly = false;
 let currentItems = [];
+let isOnline = navigator.onLine;
 
 // Load items when page loads
-document.addEventListener('DOMContentLoaded', loadItems);
+document.addEventListener('DOMContentLoaded', () => {
+    loadItems();
+    // Set initial online status
+    updateOnlineStatus();
+});
 
-// Enable drag and drop functionality
-let draggedItem = null;
+// Online/Offline status
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
 
-// Load all items from the API
+function updateOnlineStatus() {
+    isOnline = navigator.onLine;
+    document.body.classList.toggle('offline', !isOnline);
+    if (isOnline) {
+        syncPendingActions().then(() => loadItems());
+    }
+}
+
+// Load all items from the API or cache
 async function loadItems() {
     try {
-        const response = await fetch(`${API_URL}/items`);
-        const items = await response.json();
-        currentItems = items;
-        renderItems(items);
+        if (isOnline) {
+            const response = await fetch(`${API_URL}/items`);
+            const items = await response.json();
+            currentItems = items;
+            localStorage.setItem(OFFLINE_ITEMS_KEY, JSON.stringify(items));
+        } else {
+            const savedItems = localStorage.getItem(OFFLINE_ITEMS_KEY);
+            currentItems = savedItems ? JSON.parse(savedItems) : [];
+        }
+        renderItems(currentItems);
     } catch (error) {
         console.error('Error loading items:', error);
+        const savedItems = localStorage.getItem(OFFLINE_ITEMS_KEY);
+        currentItems = savedItems ? JSON.parse(savedItems) : [];
+        renderItems(currentItems);
     }
 }
 
@@ -41,21 +65,18 @@ function renderItems(items) {
     shoppingList.innerHTML = '';
     const filteredItems = showUncheckedOnly ? items.filter(item => !item.available) : items;
     filteredItems.forEach(item => {
-        const li = createItemElement(item);
-        shoppingList.appendChild(li);
+        shoppingList.appendChild(createItemElement(item));
     });
 }
 
 // Create a new list item element
 function createItemElement(item) {
     const li = document.createElement('li');
-    li.className = 'shopping-item';
-    if (item.available) {
-        li.classList.add('completed');
-    }
+    li.className = 'shopping-item' + (item.available ? ' completed' : '');
+    li.draggable = true;
+    li.dataset.name = item.name;
 
     // Add drag and drop attributes
-    li.draggable = true;
     li.addEventListener('dragstart', handleDragStart);
     li.addEventListener('dragend', handleDragEnd);
     li.addEventListener('dragover', handleDragOver);
@@ -73,7 +94,10 @@ function createItemElement(item) {
     deleteBtn.className = 'delete-btn';
     deleteBtn.textContent = '×';
     deleteBtn.title = 'Delete item';
-    deleteBtn.addEventListener('click', () => deleteItem(item.name));
+    deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteItem(item.name);
+    });
 
     li.appendChild(checkbox);
     li.appendChild(span);
@@ -87,81 +111,125 @@ async function addNewItem() {
     const name = newItemInput.value.trim();
     if (!name) return;
 
-    try {
-        const response = await fetch(`${API_URL}/items`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                name: name,
-                available: false
-            })
-        });
+    const newItem = { name, available: false };
 
-        if (response.ok) {
-            newItemInput.value = '';
-            loadItems();
-        } else {
-            const error = await response.text();
-            alert(error);
+    if (isOnline) {
+        try {
+            const response = await fetch(`${API_URL}/items`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newItem)
+            });
+            const addedItem = await response.json();
+            currentItems.push(addedItem);
+        } catch (error) {
+            console.error('Failed to add item online, saving for later:', error);
+            saveItemForLater('add', newItem);
+            currentItems.push(newItem);
         }
-    } catch (error) {
-        console.error('Error adding item:', error);
+    } else {
+        saveItemForLater('add', newItem);
+        currentItems.push(newItem);
     }
+
+    renderItems(currentItems);
+    newItemInput.value = '';
+    saveItemsToLocal();
 }
 
-// Toggle item status (available/unavailable)
+// Toggle item status
 async function toggleItemStatus(name, available) {
-    try {
-        const response = await fetch(`${API_URL}/items/${encodeURIComponent(name)}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                name: name,
-                available: available
-            })
-        });
+    const item = currentItems.find(item => item.name === name);
+    if (!item) return;
 
-        if (response.ok) {
-            // Update the item in our current items array
-            const itemIndex = currentItems.findIndex(item => item.name === name);
-            if (itemIndex !== -1) {
-                currentItems[itemIndex].available = available;
-                // Re-render the list to apply the filter if active
-                renderItems(currentItems);
-            }
+    item.available = available;
+    renderItems(currentItems);
+    saveItemsToLocal();
+
+    if (isOnline) {
+        try {
+            await fetch(`${API_URL}/items/${encodeURIComponent(name)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ available })
+            });
+        } catch (error) {
+            console.error('Failed to update item status:', error);
+            saveItemForLater('update', { name, available });
         }
-    } catch (error) {
-        console.error('Error updating item:', error);
+    } else {
+        saveItemForLater('update', { name, available });
     }
 }
 
 // Delete an item
 async function deleteItem(name) {
-    if (!confirm(`Are you sure you want to delete "${name}"?`)) {
-        return;
-    }
+    currentItems = currentItems.filter(item => item.name !== name);
+    renderItems(currentItems);
+    saveItemsToLocal();
 
-    try {
-        const response = await fetch(`${API_URL}/items/${encodeURIComponent(name)}`, {
-            method: 'DELETE'
-        });
-
-        if (response.ok) {
-            // Remove the item from our current items array
-            currentItems = currentItems.filter(item => item.name !== name);
-            // Re-render the list
-            renderItems(currentItems);
-        } else {
-            const error = await response.text();
-            alert(error);
+    if (isOnline) {
+        try {
+            await fetch(`${API_URL}/items/${encodeURIComponent(name)}`, {
+                method: 'DELETE'
+            });
+        } catch (error) {
+            console.error('Failed to delete item:', error);
+            saveItemForLater('delete', { name });
         }
-    } catch (error) {
-        console.error('Error deleting item:', error);
-        alert('Failed to delete item');
+    } else {
+        saveItemForLater('delete', { name });
+    }
+}
+
+// Save items to local storage
+function saveItemsToLocal() {
+    localStorage.setItem(OFFLINE_ITEMS_KEY, JSON.stringify(currentItems));
+}
+
+// Save action for later sync
+function saveItemForLater(action, item) {
+    const pendingActions = JSON.parse(localStorage.getItem('pendingActions') || '[]');
+    pendingActions.push({ action, item, timestamp: Date.now() });
+    localStorage.setItem('pendingActions', JSON.stringify(pendingActions));
+    saveItemsToLocal();
+}
+
+// Sync pending actions when back online
+async function syncPendingActions() {
+    const pendingActions = JSON.parse(localStorage.getItem('pendingActions') || '[]');
+    if (pendingActions.length === 0) return;
+
+    for (const action of [...pendingActions]) {
+        try {
+            if (action.action === 'add') {
+                await fetch(`${API_URL}/items`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(action.item)
+                });
+            } else if (action.action === 'update') {
+                await fetch(`${API_URL}/items/${encodeURIComponent(action.item.name)}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ available: action.item.available })
+                });
+            } else if (action.action === 'delete') {
+                await fetch(`${API_URL}/items/${encodeURIComponent(action.item.name)}`, {
+                    method: 'DELETE'
+                });
+            }
+
+            // Remove the action if successful
+            const index = pendingActions.findIndex(a => a.timestamp === action.timestamp);
+            if (index > -1) {
+                pendingActions.splice(index, 1);
+                localStorage.setItem('pendingActions', JSON.stringify(pendingActions));
+            }
+        } catch (error) {
+            console.error('Failed to sync action:', action, error);
+            return;
+        }
     }
 }
 
@@ -169,50 +237,48 @@ async function deleteItem(name) {
 function handleDragStart(e) {
     draggedItem = this;
     this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', this.innerHTML);
 }
 
-function handleDragEnd(e) {
+function handleDragEnd() {
     this.classList.remove('dragging');
+    draggedItem = null;
 }
 
 function handleDragOver(e) {
     e.preventDefault();
-    // Remove highlighting from all items
-    document.querySelectorAll('.shopping-item').forEach(item => {
-        item.classList.remove('drag-over-top', 'drag-over-bottom');
-    });
-
-    if (this === draggedItem) return;
-
-    const rect = this.getBoundingClientRect();
-    const midY = rect.top + rect.height / 2;
-    
-    if (e.clientY < midY) {
-        this.classList.add('drag-over-top');
-    } else {
-        this.classList.add('drag-over-bottom');
-    }
+    e.dataTransfer.dropEffect = 'move';
+    this.classList.add('drag-over');
 }
 
 function handleDrop(e) {
     e.preventDefault();
-    // Remove all drag-over classes
-    document.querySelectorAll('.shopping-item').forEach(item => {
-        item.classList.remove('drag-over-top', 'drag-over-bottom');
-    });
+    this.classList.remove('drag-over');
     
-    if (this === draggedItem) return;
-    
-    const items = Array.from(shoppingList.children);
-    const draggedIndex = items.indexOf(draggedItem);
-    const droppedIndex = items.indexOf(this);
-    
-    const rect = this.getBoundingClientRect();
-    const midY = rect.top + rect.height / 2;
-    
-    if (e.clientY < midY) {
-        this.parentNode.insertBefore(draggedItem, this);
-    } else {
-        this.parentNode.insertBefore(draggedItem, this.nextSibling);
+    if (draggedItem !== this) {
+        // Get the items
+        const items = Array.from(shoppingList.children);
+        const fromIndex = items.indexOf(draggedItem);
+        const toIndex = items.indexOf(this);
+        
+        // Reorder items
+        if (fromIndex < toIndex) {
+            this.after(draggedItem);
+        } else {
+            this.before(draggedItem);
+        }
+        
+        // Update the currentItems array
+        const [movedItem] = currentItems.splice(fromIndex, 1);
+        currentItems.splice(toIndex, 0, movedItem);
+        
+        // Save the new order
+        saveItemsToLocal();
     }
+}
+
+// Initialize
+if (isOnline) {
+    syncPendingActions();
 }
