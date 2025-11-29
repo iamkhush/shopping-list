@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
@@ -14,39 +15,50 @@ import (
 )
 
 type Item struct {
+	ID        int64  `json:"id"`
 	Name      string `json:"name"`
 	Available bool   `json:"available"`
 }
 
 var db *sql.DB
+var mock sqlmock.Sqlmock
 
 func initDB() {
 	var err error
-	err = godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
+	if os.Getenv("ENV") == "test" {
+		db, mock, err = sqlmock.New()
+		if err != nil {
+			log.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
+		}
+	} else {
+		err = godotenv.Load()
+		if err != nil {
+			log.Fatal("Error loading .env file")
+		}
 
-	connStr := os.Getenv("DATABASE_URL")
-	if connStr == "" {
-		log.Fatal("DATABASE_URL environment variable is not set")
-	}
-	db, err = sql.Open("postgres", connStr)
-	if err != nil {
-		log.Fatal(err)
-	}
+		connStr := os.Getenv("DATABASE_URL")
+		if connStr == "" {
+			log.Fatal("DATABASE_URL environment variable is not set")
+		}
+		db, err = sql.Open("postgres", connStr)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS items (
-		name TEXT PRIMARY KEY,
+		_, err = db.Exec(`
+	CREATE TABLE IF NOT EXISTS items (
+		id BIGSERIAL PRIMARY KEY,
+		name TEXT,
 		available BOOLEAN
 	)`)
-	if err != nil {
-		log.Fatal(err)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
 func getItems(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT name, available FROM items")
+	rows, err := db.Query("SELECT id, name, available FROM items")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -56,7 +68,7 @@ func getItems(w http.ResponseWriter, r *http.Request) {
 	var items []Item
 	for rows.Next() {
 		var item Item
-		if err := rows.Scan(&item.Name, &item.Available); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.Available); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -71,18 +83,7 @@ func addItem(w http.ResponseWriter, r *http.Request) {
 	var item Item
 	_ = json.NewDecoder(r.Body).Decode(&item)
 
-	var existingItem Item
-	err := db.QueryRow("SELECT name, available FROM items WHERE LOWER(name) = LOWER($1)", item.Name).Scan(&existingItem.Name, &existingItem.Available)
-	if err != nil && err != sql.ErrNoRows {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if existingItem.Name != "" {
-		http.Error(w, "Item with the same name already exists", http.StatusConflict)
-		return
-	}
-
-	_, err = db.Exec("INSERT INTO items (name, available) VALUES ($1, $2)", item.Name, item.Available)
+	err := db.QueryRow("INSERT INTO items (name, available) VALUES ($1, $2) RETURNING id", item.Name, item.Available).Scan(&item.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -94,17 +95,15 @@ func addItem(w http.ResponseWriter, r *http.Request) {
 
 func updateItem(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
-	name := params["name"]
+	id := params["id"]
 
 	var item Item
-	err := db.QueryRow("SELECT name, available FROM items WHERE LOWER(name) = LOWER($1)", name).Scan(&item.Name, &item.Available)
-	if err != nil {
-		http.Error(w, "Item not found", http.StatusNotFound)
+	if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	item.Available = !item.Available
-	_, err = db.Exec("UPDATE items SET available = $1 WHERE LOWER(name) = LOWER($2)", item.Available, name)
+	_, err := db.Exec("UPDATE items SET name = $1, available = $2 WHERE id = $3", item.Name, item.Available, id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -116,9 +115,9 @@ func updateItem(w http.ResponseWriter, r *http.Request) {
 
 func deleteItem(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
-	name := params["name"]
+	id := params["id"]
 
-	result, err := db.Exec("DELETE FROM items WHERE LOWER(name) = LOWER($1)", name)
+	result, err := db.Exec("DELETE FROM items WHERE id = $1", id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -149,8 +148,8 @@ func main() {
 	// API routes
 	subrouter.HandleFunc("/api/items", getItems).Methods("GET")
 	subrouter.HandleFunc("/api/items", addItem).Methods("POST")
-	subrouter.HandleFunc("/api/items/{name}", updateItem).Methods("PUT")
-	subrouter.HandleFunc("/api/items/{name}", deleteItem).Methods("DELETE")
+	subrouter.HandleFunc("/api/items/{id}", updateItem).Methods("PUT")
+	subrouter.HandleFunc("/api/items/{id}", deleteItem).Methods("DELETE")
 
 	// Serve static files
 	subrouter.PathPrefix("/static/").Handler(http.StripPrefix("/shopping-list/static/", http.FileServer(http.Dir("./static/"))))

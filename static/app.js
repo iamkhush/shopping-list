@@ -68,6 +68,8 @@ function createItemElement(item) {
 
     const span = document.createElement('span');
     span.textContent = item.name;
+    span.title = 'Double-click to edit'; // Add a tooltip
+    span.addEventListener('dblclick', () => editItemName(item, span));
 
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'delete-btn';
@@ -75,11 +77,73 @@ function createItemElement(item) {
     deleteBtn.title = 'Delete item';
     deleteBtn.addEventListener('click', () => deleteItem(item.name));
 
+    const editBtn = document.createElement('button');
+    editBtn.className = 'edit-btn';
+    editBtn.textContent = 'Edit';
+    editBtn.title = 'Edit item';
+    editBtn.addEventListener('click', () => editItemName(item, span));
+
     li.appendChild(checkbox);
     li.appendChild(span);
+    li.appendChild(editBtn);
     li.appendChild(deleteBtn);
 
     return li;
+}
+
+// Edit item name
+function editItemName(item, span) {
+    const oldName = item.name;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = oldName;
+    input.className = 'edit-input';
+
+    span.replaceWith(input);
+    input.focus();
+
+    const saveChanges = async () => {
+        const newName = input.value.trim();
+        if (newName && newName !== oldName) {
+            try {
+                const response = await fetch(`${API_URL}/items/${encodeURIComponent(oldName)}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: newName,
+                        available: item.available
+                    })
+                });
+
+                if (response.ok) {
+                    item.name = newName;
+                    input.replaceWith(span);
+                    span.textContent = newName;
+                } else {
+                    const error = await response.text();
+                    alert(`Error updating item: ${error}`);
+                    input.replaceWith(span);
+                }
+            } catch (error) {
+                console.error('Error updating item:', error);
+                alert('Failed to update item');
+                input.replaceWith(span);
+            }
+        } else {
+            input.replaceWith(span);
+        }
+    };
+
+    input.addEventListener('blur', saveChanges);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            saveChanges();
+        } else if (e.key === 'Escape') {
+            input.replaceWith(span);
+        }
+    });
 }
 
 // Add a new item

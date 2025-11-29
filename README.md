@@ -98,6 +98,12 @@ go build -o shopping-list
 sudo systemctl restart shopping-list
 ```
 
+Or run the following command to do all steps
+
+```bash
+ansible-playbook devops/ansible-playbook.yml --tags "staic,build,services" --ask-become-pass
+```
+
 ### Configuration
 
 The application uses environment variables for configuration:

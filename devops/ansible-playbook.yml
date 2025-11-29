@@ -108,7 +108,7 @@
 
     - name: Copy static files
       copy:
-        src: "{{ project_dir }}/static"
+        src: "{{ project_dir }}/static/"
         dest: "{{ static_root }}/"
         owner: "{{ app_user }}"
         group: "{{ nginx_user }}"
