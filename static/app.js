@@ -3,7 +3,7 @@ const API_URL = 'https://chaddas.home/shopping-list/api';
 
 // DOM Elements
 const shoppingList = document.getElementById('shopping-list');
-const newItemInput = document.getElementById('newItem');
+const searchInput = document.getElementById('newItem'); // Now used for search and add
 const toggleFilterBtn = document.getElementById('toggleFilter');
 
 // State
@@ -11,6 +11,7 @@ let showUncheckedOnly = false;
 let currentItems = [];
 let isOnline = navigator.onLine;
 let pendingChangesData = [];
+let currentSearchTerm = '';
 
 // Register service worker
 if ('serviceWorker' in navigator) {
@@ -63,6 +64,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateConnectionStatus();
   loadItems();
 });
+searchInput.addEventListener('input', handleSearch);
+searchInput.addEventListener('keydown', handleSearchEnter);
 
 // Enable drag and drop functionality
 let draggedItem = null;
@@ -116,13 +119,21 @@ function toggleUncheckedFilter() {
     showUncheckedOnly = !showUncheckedOnly;
     toggleFilterBtn.classList.toggle('active', showUncheckedOnly);
     toggleFilterBtn.textContent = showUncheckedOnly ? 'Show All Items' : 'Show Unchecked Only';
-    renderItems(currentItems);
+    renderItems();
 }
 
 // Render items in the list
-function renderItems(items) {
+function renderItems() {
     shoppingList.innerHTML = '';
-    const filteredItems = showUncheckedOnly ? items.filter(item => !item.available) : items;
+    
+    let itemsToRender = currentItems;
+
+    // Apply search filter
+    if (currentSearchTerm) {
+        itemsToRender = itemsToRender.filter(item => item.name.toLowerCase().includes(currentSearchTerm));
+    }
+
+    const filteredItems = showUncheckedOnly ? itemsToRender.filter(item => !item.available) : itemsToRender;
     filteredItems.forEach(item => {
         const li = createItemElement(item);
         shoppingList.appendChild(li);
@@ -147,7 +158,7 @@ function createItemElement(item) {
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.checked = item.available;
-    checkbox.addEventListener('change', () => toggleItemStatus(item.name, checkbox.checked));
+    checkbox.addEventListener('change', () => toggleItemStatus(item.id, checkbox.checked));
 
     const span = document.createElement('span');
     span.textContent = item.name;
@@ -158,7 +169,7 @@ function createItemElement(item) {
     deleteBtn.className = 'delete-btn';
     deleteBtn.textContent = '×';
     deleteBtn.title = 'Delete item';
-    deleteBtn.addEventListener('click', () => deleteItem(item.name));
+    deleteBtn.addEventListener('click', () => deleteItem(item.id, item.name));
 
     const editBtn = document.createElement('button');
     editBtn.className = 'edit-btn';
@@ -191,7 +202,7 @@ function editItemName(item, span) {
             try {
                 if (isOnline) {
                     // Online: send to server
-                    const response = await fetch(`${API_URL}/items/${encodeURIComponent(oldName)}`, {
+                    const response = await fetch(`${API_URL}/items/${item.id}`, {
                         method: 'PUT',
                         headers: {
                             'Content-Type': 'application/json',
@@ -242,9 +253,27 @@ function editItemName(item, span) {
     });
 }
 
+// Handle real-time search
+function handleSearch(e) {
+    currentSearchTerm = e.target.value.toLowerCase();
+    renderItems();
+}
+
+// Handle creating a new item on Enter if no search results
+async function handleSearchEnter(e) {
+    if (e.key !== 'Enter') {
+        return;
+    }
+
+    const filteredCount = shoppingList.children.length;
+    if (filteredCount === 0 && searchInput.value.trim() !== '') {
+        await addNewItem();
+    }
+}
+
 // Add a new item
 async function addNewItem() {
-    const name = newItemInput.value.trim();
+    const name = searchInput.value.trim();
     if (!name) return;
 
     const newItem = { name: name, available: false };
@@ -264,8 +293,9 @@ async function addNewItem() {
                 const addedItem = await response.json();
                 currentItems.push(addedItem);
                 await offlineDB.saveItems(currentItems);
-                newItemInput.value = '';
-                renderItems(currentItems);
+                searchInput.value = '';
+                currentSearchTerm = '';
+                renderItems();
                 console.log('Item added to server');
             } else {
                 const error = await response.text();
@@ -277,8 +307,9 @@ async function addNewItem() {
             currentItems.push(tempItem);
             await offlineDB.saveItems(currentItems);
             await offlineDB.addPendingChange('add', tempItem);
-            newItemInput.value = '';
-            renderItems(currentItems);
+            searchInput.value = '';
+            currentSearchTerm = '';
+            renderItems();
             await loadPendingChanges();
             console.log('Item added offline (pending)');
         }
@@ -290,8 +321,9 @@ async function addNewItem() {
             currentItems.push(tempItem);
             await offlineDB.saveItems(currentItems);
             await offlineDB.addPendingChange('add', tempItem);
-            newItemInput.value = '';
-            renderItems(currentItems);
+            searchInput.value = '';
+            currentSearchTerm = '';
+            renderItems();
             await loadPendingChanges();
         } else {
             alert('Failed to add item');
@@ -300,37 +332,35 @@ async function addNewItem() {
 }
 
 // Toggle item status (available/unavailable)
-async function toggleItemStatus(name, available) {
+async function toggleItemStatus(id, available) {
     try {
-        const itemIndex = currentItems.findIndex(item => item.name === name);
-        if (itemIndex === -1) return;
-
-        const item = currentItems[itemIndex];
+        const item = currentItems.find(item => item.id === id);
+        if (!item) return;
 
         if (isOnline) {
             // Online: send to server
-            const response = await fetch(`${API_URL}/items/${encodeURIComponent(name)}`, {
+            const response = await fetch(`${API_URL}/items/${id}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    name: name,
+                    name: item.name,
                     available: available
                 })
             });
 
             if (response.ok) {
-                currentItems[itemIndex].available = available;
+                currentItems[currentItems.findIndex(i => i.id === id)].available = available;
                 await offlineDB.saveItems(currentItems);
-                renderItems(currentItems);
+                renderItems();
             }
         } else {
             // Offline: save locally and queue for sync
-            currentItems[itemIndex].available = available;
+            currentItems[currentItems.findIndex(i => i.id === id)].available = available;
             await offlineDB.saveItems(currentItems);
             await offlineDB.addPendingChange('update', { ...item, available: available });
-            renderItems(currentItems);
+            renderItems();
             await loadPendingChanges();
             console.log('Item status updated offline (pending)');
         }
@@ -338,12 +368,12 @@ async function toggleItemStatus(name, available) {
         console.error('Error updating item:', error);
         if (!isOnline) {
             // Ensure offline changes are still saved
-            const itemIndex = currentItems.findIndex(item => item.name === name);
+            const itemIndex = currentItems.findIndex(item => item.id === id);
             if (itemIndex !== -1) {
                 currentItems[itemIndex].available = available;
                 await offlineDB.saveItems(currentItems);
                 await offlineDB.addPendingChange('update', currentItems[itemIndex]);
-                renderItems(currentItems);
+                renderItems();
                 await loadPendingChanges();
             }
         }
@@ -351,27 +381,27 @@ async function toggleItemStatus(name, available) {
 }
 
 // Delete an item
-async function deleteItem(name) {
+async function deleteItem(id, name) {
     if (!confirm(`Are you sure you want to delete "${name}"?`)) {
         return;
     }
 
     try {
-        const itemIndex = currentItems.findIndex(item => item.name === name);
+        const itemIndex = currentItems.findIndex(item => item.id === id);
         if (itemIndex === -1) return;
 
         const item = currentItems[itemIndex];
 
         if (isOnline) {
             // Online: send to server
-            const response = await fetch(`${API_URL}/items/${encodeURIComponent(name)}`, {
+            const response = await fetch(`${API_URL}/items/${id}`, {
                 method: 'DELETE'
             });
 
             if (response.ok) {
                 currentItems.splice(itemIndex, 1);
                 await offlineDB.saveItems(currentItems);
-                renderItems(currentItems);
+                renderItems();
             } else {
                 const error = await response.text();
                 alert(error);
@@ -381,7 +411,7 @@ async function deleteItem(name) {
             currentItems.splice(itemIndex, 1);
             await offlineDB.saveItems(currentItems);
             await offlineDB.addPendingChange('delete', item);
-            renderItems(currentItems);
+            renderItems();
             await loadPendingChanges();
             console.log('Item deleted offline (pending)');
         }
@@ -389,13 +419,13 @@ async function deleteItem(name) {
         console.error('Error deleting item:', error);
         if (!isOnline) {
             // Fallback: ensure offline delete is still saved
-            const itemIndex = currentItems.findIndex(item => item.name === name);
+            const itemIndex = currentItems.findIndex(item => item.id === id);
             if (itemIndex !== -1) {
                 const item = currentItems[itemIndex];
                 currentItems.splice(itemIndex, 1);
                 await offlineDB.saveItems(currentItems);
                 await offlineDB.addPendingChange('delete', item);
-                renderItems(currentItems);
+                renderItems();
                 await loadPendingChanges();
             }
         } else {
