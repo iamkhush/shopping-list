@@ -138,3 +138,262 @@ h1 {
     text-decoration: line-through;
     color: #888;
 }
+
+.shopping-item .edit-btn {
+    padding: 0.25rem 0.5rem;
+    background-color: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    font-size: 0.9rem;
+}
+
+.shopping-item .edit-btn:hover {
+    background-color: #1976D2;
+}
+
+.edit-input {
+    flex: 1;
+    padding: 0.5rem;
+    border: 2px solid #2196F3;
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+/* Connection Status Indicator */
+.connection-status {
+    position: sticky;
+    top: 0;
+    padding: 0.75rem;
+    text-align: center;
+    font-weight: bold;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    z-index: 100;
+    font-size: 0.9rem;
+}
+
+.connection-status.online {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.connection-status.offline {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.8; }
+}
+
+/* Sync Controls */
+.sync-controls {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background-color: #e8f5e9;
+    border: 2px solid #4CAF50;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.sync-btn {
+    padding: 0.75rem 1.5rem;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: bold;
+    transition: background-color 0.3s;
+}
+
+.sync-btn:hover:not(:disabled) {
+    background-color: #45a049;
+}
+
+.sync-btn:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+/* Pending Changes Section */
+.pending-changes-section {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background-color: #fff3cd;
+    border: 2px dashed #ff9800;
+    border-radius: 4px;
+}
+
+.pending-changes-header {
+    margin-bottom: 1rem;
+}
+
+.pending-changes-header h2 {
+    color: #856404;
+    font-size: 1.2rem;
+    margin-bottom: 0.5rem;
+}
+
+.pending-changes-hint {
+    color: #856404;
+    font-size: 0.9rem;
+    font-style: italic;
+    margin: 0;
+}
+
+.pending-changes-list {
+    list-style: none;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.pending-item {
+    background-color: white;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    border-left: 4px solid #ff9800;
+}
+
+.pending-item.pending-add {
+    border-left-color: #4CAF50;
+    background-color: #f1f8e9;
+}
+
+.pending-item.pending-update {
+    border-left-color: #2196F3;
+    background-color: #e3f2fd;
+}
+
+.pending-item.pending-delete {
+    border-left-color: #dc3545;
+    background-color: #ffebee;
+}
+
+.pending-icon {
+    font-size: 1.2rem;
+    min-width: 20px;
+}
+
+.pending-text {
+    flex: 1;
+    color: #333;
+    font-size: 0.95rem;
+}
+
+.pending-text strong {
+    color: #000;
+}
+
+.pending-status {
+    font-size: 0.75rem;
+    font-weight: bold;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    text-transform: uppercase;
+}
+
+.pending-status.pending {
+    background-color: #fff59d;
+    color: #f57f17;
+}
+
+.pending-status.syncing {
+    background-color: #b3e5fc;
+    color: #01579b;
+}
+
+.pending-status.synced {
+    background-color: #c8e6c9;
+    color: #1b5e20;
+}
+
+.pending-status.failed {
+    background-color: #ffccbc;
+    color: #d84315;
+}
+
+/* Mobile optimization */
+@media (max-width: 600px) {
+    .container {
+        margin: 0;
+        padding: 0.5rem;
+    }
+
+    h1 {
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .add-item {
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .add-item input,
+    .add-item button {
+        padding: 0.75rem;
+        font-size: 1rem;
+    }
+
+    .shopping-item {
+        padding: 0.75rem;
+        margin-bottom: 0.4rem;
+        gap: 0.5rem;
+    }
+
+    .shopping-item .delete-btn,
+    .shopping-item .edit-btn {
+        padding: 0.5rem;
+        font-size: 0.8rem;
+    }
+
+    .connection-status {
+        font-size: 0.85rem;
+        padding: 0.5rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .sync-controls {
+        padding: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .sync-btn {
+        padding: 0.75rem 1rem;
+        font-size: 0.9rem;
+        width: 100%;
+    }
+
+    .pending-changes-section {
+        margin-top: 1.5rem;
+        padding: 1rem;
+    }
+
+    .pending-changes-header h2 {
+        font-size: 1rem;
+    }
+
+    .pending-item {
+        padding: 0.6rem;
+        margin-bottom: 0.4rem;
+        gap: 0.5rem;
+    }
+
+    .pending-text {
+        font-size: 0.85rem;
+    }
+}

@@ -8,16 +8,41 @@
 </head>
 <body>
     <div class="container">
+        <!-- Connection Status Indicator -->
+        <div id="connection-status" class="connection-status online">🟢 Online</div>
+
         <h1>Shopping List</h1>
+        
         <div class="add-item">
             <input type="text" id="newItem" placeholder="Add new item">
             <button onclick="addNewItem()">Add</button>
         </div>
+        
         <div class="filter-controls">
             <button id="toggleFilter" onclick="toggleUncheckedFilter()">Show Unchecked Only</button>
         </div>
+
+        <!-- Sync Controls (shown when online and pending changes exist) -->
+        <div id="sync-container" class="sync-controls" style="display: none;">
+            <button id="sync-all-btn" onclick="syncAllChanges()" class="sync-btn">
+                📤 Sync All Changes
+            </button>
+        </div>
+
         <ul id="shopping-list" class="shopping-list"></ul>
+
+        <!-- Pending Changes Section (shown when offline) -->
+        <div id="pending-changes-container" class="pending-changes-section" style="display: none;">
+            <div class="pending-changes-header">
+                <h2>⏳ Pending Changes (<span id="pending-changes-count">0</span>)</h2>
+                <p class="pending-changes-hint">These changes will be synced when you go online.</p>
+            </div>
+            <ul id="pending-changes-list" class="pending-changes-list"></ul>
+        </div>
     </div>
+
+    <!-- Scripts -->
+    <script src="static/offline-db.js"></script>
     <script src="static/app.js"></script>
 </body>
 </html>
