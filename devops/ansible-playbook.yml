@@ -13,8 +13,8 @@
     db_user: iamkhush
     server_name: "{{ lookup('env', 'SERVER_NAME') | default('chaddas.home', true) }}"
     script_name: /{{ app_name }}
-    ansible_become_method: sudo
-    ansible_become_flags: '-H -S'
+    ansible_become_method: sudo # Use sudo for privilege escalation
+    ansible_become_flags: '-H -S -k' # -S: read password from stdin, -k: force password prompt (bypasses fingerprint)
     nginx_user: nginx
     static_root: /static/{{ app_name }}
 

@@ -101,7 +101,7 @@ sudo systemctl restart shopping-list
 Or run the following command to do all steps
 
 ```bash
-ansible-playbook devops/ansible-playbook.yml --tags "staic,build,services" --ask-become-pass
+ansible-playbook devops/ansible-playbook.yml --tags "static,build,services" --ask-become-pass
 ```
 
 ### Configuration

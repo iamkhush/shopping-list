@@ -48,7 +48,7 @@ func initDB() {
 		_, err = db.Exec(`
 	CREATE TABLE IF NOT EXISTS items (
 		id BIGSERIAL PRIMARY KEY,
-		name TEXT,
+		name TEXT UNIQUE,
 		available BOOLEAN
 	)`)
 		if err != nil {
@@ -83,7 +83,20 @@ func addItem(w http.ResponseWriter, r *http.Request) {
 	var item Item
 	_ = json.NewDecoder(r.Body).Decode(&item)
 
-	err := db.QueryRow("INSERT INTO items (name, available) VALUES ($1, $2) RETURNING id", item.Name, item.Available).Scan(&item.ID)
+	// Check for existing item with the same name (case-insensitive)
+	var existingID int64
+	err := db.QueryRow("SELECT id FROM items WHERE name ILIKE $1", item.Name).Scan(&existingID)
+	if err != sql.ErrNoRows {
+		// If err is nil, an item was found. If err is not sql.ErrNoRows, another DB error occurred.
+		if err == nil {
+			http.Error(w, "Item already exists", http.StatusConflict)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	err = db.QueryRow("INSERT INTO items (name, available) VALUES ($1, $2) RETURNING id", item.Name, item.Available).Scan(&item.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
