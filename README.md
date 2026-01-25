@@ -8,6 +8,10 @@ A simple shopping list application with a Go backend and interactive frontend.
 - Add, update, and delete shopping items
 - Filter view for unchecked items
 - Persistent storage in PostgreSQL
+- Offline support (PWA) with Service Worker
+
+### PWA & Offline Support
+The application registers a Service Worker to enable offline functionality. The Service Worker is served from the root path (`/shopping-list/sw.js`) to ensure it can control the entire application scope (`/shopping-list/`). It caches static assets and provides a fallback for API requests when offline.
 
 ## API Endpoints
 

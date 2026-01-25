@@ -1,23 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shopping List</title>
-    <link rel="stylesheet" href="static/styles.css">
+    <link rel="stylesheet" href="/static/shopping-list/styles.css?v=4">
 </head>
+
 <body>
     <div class="container">
         <!-- Connection Status Indicator -->
         <div id="connection-status" class="connection-status online">🟢 Online</div>
 
         <h1>Shopping List</h1>
-        
+
         <div class="add-item">
             <input type="text" id="newItem" placeholder="Add new item">
             <button onclick="addNewItem()">Add</button>
         </div>
-        
+
         <div class="filter-controls">
             <button id="toggleFilter" onclick="toggleUncheckedFilter()">Show Unchecked Only</button>
         </div>
@@ -42,7 +44,19 @@
     </div>
 
     <!-- Scripts -->
-    <script src="static/offline-db.js"></script>
-    <script src="static/app.js"></script>
+    <script src="/static/shopping-list/offline-db.js?v=4"></script>
+    <script src="/static/shopping-list/app.js?v=4"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('/shopping-list/sw.js', { scope: '/shopping-list/' }).then(function (registration) {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                }, function (err) {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+            });
+        }
+    </script>
 </body>
+
 </html>

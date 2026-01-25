@@ -15,54 +15,59 @@ let currentSearchTerm = '';
 
 // Register service worker
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('static/sw.js').then(registration => {
-    console.log('Service Worker registered successfully:', registration);
-  }).catch(error => {
-    console.log('Service Worker registration failed:', error);
-  });
+    navigator.serviceWorker.register('/shopping-list/sw.js', { scope: '/shopping-list/' }).then(registration => {
+        console.log('Service Worker registered successfully:', registration);
+    }).catch(error => {
+        console.log('Service Worker registration failed:', error);
+    });
 }
 
 // Network status detection
 window.addEventListener('online', () => {
-  console.log('App is now online');
-  isOnline = true;
-  updateConnectionStatus();
-  showSyncButton();
+    console.log('App is now online');
+    isOnline = true;
+    updateConnectionStatus();
+    showSyncButton();
 });
 
 window.addEventListener('offline', () => {
-  console.log('App is now offline');
-  isOnline = false;
-  updateConnectionStatus();
+    console.log('App is now offline');
+    isOnline = false;
+    updateConnectionStatus();
 });
 
 function updateConnectionStatus() {
-  const statusElement = document.getElementById('connection-status');
-  if (statusElement) {
-    if (isOnline) {
-      statusElement.classList.remove('offline');
-      statusElement.classList.add('online');
-      statusElement.textContent = '🟢 Online';
-    } else {
-      statusElement.classList.remove('online');
-      statusElement.classList.add('offline');
-      statusElement.textContent = '🔴 Offline - Changes will be saved locally';
+    const statusElement = document.getElementById('connection-status');
+    if (statusElement) {
+        if (isOnline) {
+            statusElement.classList.remove('offline');
+            statusElement.classList.add('online');
+            statusElement.textContent = '🟢 Online';
+        } else {
+            statusElement.classList.remove('online');
+            statusElement.classList.add('offline');
+            statusElement.textContent = '🔴 Offline - Changes will be saved locally';
+        }
     }
-  }
 }
 
 function showSyncButton() {
-  const syncContainer = document.getElementById('sync-container');
-  if (syncContainer) {
-    syncContainer.style.display = isOnline ? 'block' : 'none';
-  }
+    const syncContainer = document.getElementById('sync-container');
+    if (syncContainer) {
+        // Show only if online and there are pending changes
+        if (isOnline && pendingChangesData && pendingChangesData.length > 0) {
+            syncContainer.style.display = 'block';
+        } else {
+            syncContainer.style.display = 'none';
+        }
+    }
 }
 
 // Load items when page loads
 document.addEventListener('DOMContentLoaded', async () => {
-  await offlineDB.init();
-  updateConnectionStatus();
-  loadItems();
+    await offlineDB.init();
+    updateConnectionStatus();
+    loadItems();
 });
 searchInput.addEventListener('input', handleSearch);
 searchInput.addEventListener('keydown', handleSearchEnter);
@@ -109,6 +114,7 @@ async function loadPendingChanges() {
     try {
         pendingChangesData = await offlineDB.getPendingChanges();
         renderPendingChanges();
+        showSyncButton();
     } catch (error) {
         console.error('Error loading pending changes:', error);
     }
@@ -125,7 +131,7 @@ function toggleUncheckedFilter() {
 // Render items in the list
 function renderItems() {
     shoppingList.innerHTML = '';
-    
+
     let itemsToRender = currentItems;
 
     // Apply search filter
@@ -455,7 +461,7 @@ function handleDragOver(e) {
 
     const rect = this.getBoundingClientRect();
     const midY = rect.top + rect.height / 2;
-    
+
     if (e.clientY < midY) {
         this.classList.add('drag-over-top');
     } else {
@@ -469,16 +475,16 @@ function handleDrop(e) {
     document.querySelectorAll('.shopping-item').forEach(item => {
         item.classList.remove('drag-over-top', 'drag-over-bottom');
     });
-    
+
     if (this === draggedItem) return;
-    
+
     const items = Array.from(shoppingList.children);
     const draggedIndex = items.indexOf(draggedItem);
     const droppedIndex = items.indexOf(this);
-    
+
     const rect = this.getBoundingClientRect();
     const midY = rect.top + rect.height / 2;
-    
+
     if (e.clientY < midY) {
         this.parentNode.insertBefore(draggedItem, this);
     } else {
@@ -509,10 +515,10 @@ function renderPendingChanges() {
     pendingChangesData.forEach(change => {
         const li = document.createElement('li');
         li.className = `pending-item pending-${change.type}`;
-        
+
         let icon = '';
         let action = '';
-        
+
         switch (change.type) {
             case 'add':
                 icon = '➕';
@@ -533,7 +539,7 @@ function renderPendingChanges() {
             <span class="pending-text">${action}: <strong>${change.item.name}</strong></span>
             <span class="pending-status ${change.status}">${change.status}</span>
         `;
-        
+
         pendingChangesList.appendChild(li);
     });
 }
@@ -557,34 +563,34 @@ async function syncAllChanges() {
     for (const change of pendingChangesData) {
         try {
             await offlineDB.updatePendingChangeStatus(change.id, 'syncing');
-            
+
             let response;
-            
+
             switch (change.type) {
                 case 'add':
                     response = await fetch(`${API_URL}/items`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                            name: change.item.name, 
-                            available: change.item.available 
+                        body: JSON.stringify({
+                            name: change.item.name,
+                            available: change.item.available
                         })
                     });
                     break;
-                    
+
                 case 'update':
-                    response = await fetch(`${API_URL}/items/${encodeURIComponent(change.item.name)}`, {
+                    response = await fetch(`${API_URL}/items/${change.item.id}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                            name: change.item.name, 
-                            available: change.item.available 
+                        body: JSON.stringify({
+                            name: change.item.name,
+                            available: change.item.available
                         })
                     });
                     break;
-                    
+
                 case 'delete':
-                    response = await fetch(`${API_URL}/items/${encodeURIComponent(change.item.name)}`, {
+                    response = await fetch(`${API_URL}/items/${change.item.id}`, {
                         method: 'DELETE'
                     });
                     break;
@@ -621,6 +627,7 @@ async function syncAllChanges() {
 
     // Reload pending changes
     await loadPendingChanges();
+    showSyncButton();
 
     if (syncBtn) {
         syncBtn.disabled = false;

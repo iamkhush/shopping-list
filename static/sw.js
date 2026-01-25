@@ -1,13 +1,14 @@
 // Service Worker for offline-first caching strategy
-const CACHE_NAME = 'shopping-list-v1';
+const CACHE_NAME = 'shopping-list-v2';
 const API_CACHE_NAME = 'shopping-list-api-v1';
 
 // Static assets to cache on install
 const STATIC_ASSETS = [
   '/shopping-list/',
-  '/shopping-list/index.html',
-  '/shopping-list/static/app.js',
-  '/shopping-list/static/styles.css'
+  '/static/shopping-list/app.js',
+  '/static/shopping-list/styles.css',
+  '/static/shopping-list/offline-db.js',
+  '/shopping-list/sw.js'
 ];
 
 // Install event: cache static assets
@@ -15,7 +16,14 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('Service Worker: Caching static assets');
-      return cache.addAll(STATIC_ASSETS);
+      return cache.addAll(STATIC_ASSETS)
+        .catch((error) => {
+          // Log the specific error to identify which request failed
+          console.error('Failed to add resources to cache:', error);
+          // You might choose to rethrow the error if installation should fail
+          // or handle it gracefully, perhaps by falling back to a network-first strategy
+          throw error; // Re-throwing ensures the install event fails
+        });
     })
   );
   self.skipWaiting();
@@ -41,7 +49,29 @@ self.addEventListener('activate', (event) => {
 // Fetch event: network-first for API, cache-first for assets
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  
+
+  // Handle navigation requests (page reloads, direct visits)
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          // Cache the HTML page if successful
+          if (response.status === 200) {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return response;
+        })
+        .catch(() => {
+          // Fallback to cached index.html if offline
+          return caches.match('/shopping-list/');
+        })
+    );
+    return;
+  }
+
   // API requests: network-first strategy (try server, fallback to cache)
   if (url.pathname.includes('/shopping-list/api')) {
     event.respondWith(
@@ -72,24 +102,25 @@ self.addEventListener('fetch', (event) => {
           });
         })
     );
-  } else {
-    // Static assets: cache-first strategy
-    event.respondWith(
-      caches.match(event.request).then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        return fetch(event.request).then((response) => {
-          // Cache new assets
-          if (response.status === 200) {
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
-          }
-          return response;
-        });
-      })
-    );
+    return;
   }
+
+  // Static assets: cache-first strategy
+  event.respondWith(
+    caches.match(event.request).then((cachedResponse) => {
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+      return fetch(event.request).then((response) => {
+        // Cache new assets
+        if (response.status === 200) {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+        }
+        return response;
+      });
+    })
+  );
 });

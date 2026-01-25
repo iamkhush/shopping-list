@@ -172,6 +172,12 @@ func main() {
 		log.Println("Serving index.html")
 		http.ServeFile(w, r, "index.html")
 	}).Methods("GET")
+	
+	// Serve sw.js at root of subrouter
+	subrouter.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Serving sw.js")
+		http.ServeFile(w, r, "static/sw.js")
+	}).Methods("GET")
 
 	// Add CORS middleware
 	corsMiddleware := handlers.CORS(
