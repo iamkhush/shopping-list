@@ -32,21 +32,71 @@ window.addEventListener('online', () => {
 
 window.addEventListener('offline', () => {
     console.log('App is now offline');
+    goOffline();
+});
+
+function goOffline() {
     isOnline = false;
     updateConnectionStatus();
-});
+    showSyncButton();
+}
 
 function updateConnectionStatus() {
     const statusElement = document.getElementById('connection-status');
+    const checkConnectionBtn = document.getElementById('check-connection-btn');
+
     if (statusElement) {
         if (isOnline) {
             statusElement.classList.remove('offline');
             statusElement.classList.add('online');
             statusElement.textContent = '🟢 Online';
+            if (checkConnectionBtn) checkConnectionBtn.style.display = 'none';
         } else {
             statusElement.classList.remove('online');
             statusElement.classList.add('offline');
             statusElement.textContent = '🔴 Offline - Changes will be saved locally';
+            if (checkConnectionBtn) checkConnectionBtn.style.display = 'inline-block';
+        }
+    }
+}
+
+// Manual connection check
+async function checkConnection() {
+    const checkBtn = document.getElementById('check-connection-btn');
+    if (checkBtn) {
+        checkBtn.disabled = true;
+        checkBtn.textContent = 'Checking...';
+    }
+
+    try {
+        // Add timestamp to prevent caching
+        const response = await fetch(`${API_URL}/items?_t=${Date.now()}`, {
+            method: 'HEAD',
+            cache: 'no-store'
+        });
+        if (response.ok) {
+            console.log('Connection restored!');
+            isOnline = true;
+            updateConnectionStatus();
+
+            // Try to sync if we have pending changes
+            if (pendingChangesData.length > 0) {
+                showSyncButton();
+                // Optional: Auto-sync could be triggered here, but let's stick to manual sync for safety as per current design
+            }
+
+            // Reload items to be sure we are fresh
+            loadItems();
+        } else {
+            throw new Error('Server returned non-ok status');
+        }
+    } catch (error) {
+        console.warn('Connection check failed:', error);
+        alert('Server is still unreachable.');
+    } finally {
+        if (checkBtn) {
+            checkBtn.disabled = false;
+            checkBtn.textContent = '🔄 Check Connection';
         }
     }
 }
@@ -99,6 +149,7 @@ async function loadItems() {
                 }
             } catch (error) {
                 console.warn('Failed to sync items from server, using local data:', error);
+                goOffline();
             }
         }
 
@@ -169,7 +220,27 @@ function createItemElement(item) {
     const span = document.createElement('span');
     span.textContent = item.name;
     span.title = 'Double-click to edit'; // Add a tooltip
-    span.addEventListener('dblclick', () => editItemName(item, span));
+    span.addEventListener('dblclick', () => openEditModal(item));
+
+    if (item.coop_url) {
+        const coopLink = document.createElement('a');
+        coopLink.href = item.coop_url;
+        coopLink.target = '_blank';
+        coopLink.textContent = '[Coop]';
+        coopLink.style.marginLeft = '10px';
+        coopLink.style.fontSize = '0.8em';
+        li.appendChild(coopLink);
+    }
+
+    if (item.ica_url) {
+        const icaLink = document.createElement('a');
+        icaLink.href = item.ica_url;
+        icaLink.target = '_blank';
+        icaLink.textContent = '[ICA]';
+        icaLink.style.marginLeft = '10px';
+        icaLink.style.fontSize = '0.8em';
+        li.appendChild(icaLink);
+    }
 
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'delete-btn';
@@ -180,8 +251,7 @@ function createItemElement(item) {
     const editBtn = document.createElement('button');
     editBtn.className = 'edit-btn';
     editBtn.textContent = 'Edit';
-    editBtn.title = 'Edit item';
-    editBtn.addEventListener('click', () => editItemName(item, span));
+    editBtn.addEventListener('click', () => openEditModal(item));
 
     li.appendChild(checkbox);
     li.appendChild(span);
@@ -192,71 +262,68 @@ function createItemElement(item) {
 }
 
 // Edit item name
-function editItemName(item, span) {
-    const oldName = item.name;
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.value = oldName;
-    input.className = 'edit-input';
+function openEditModal(item) {
+    document.getElementById('edit-id').value = item.id;
+    document.getElementById('edit-available').value = item.available;
+    document.getElementById('edit-sorting-id').value = item.sorting_id || 0;
+    document.getElementById('edit-name').value = item.name;
+    document.getElementById('edit-coop-url').value = item.coop_url || '';
+    document.getElementById('edit-ica-url').value = item.ica_url || '';
+    
+    document.getElementById('edit-modal').style.display = 'flex';
+}
 
-    span.replaceWith(input);
-    input.focus();
+function closeEditModal() {
+    document.getElementById('edit-modal').style.display = 'none';
+}
 
-    const saveChanges = async () => {
-        const newName = input.value.trim();
-        if (newName && newName !== oldName) {
-            try {
-                if (isOnline) {
-                    // Online: send to server
-                    const response = await fetch(`${API_URL}/items/${item.id}`, {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            name: newName,
-                            available: item.available
-                        })
-                    });
+async function saveEdit() {
+    const id = parseInt(document.getElementById('edit-id').value, 10);
+    const item = currentItems.find(i => i.id === id);
+    if (!item) return;
 
-                    if (response.ok) {
-                        item.name = newName;
-                        input.replaceWith(span);
-                        span.textContent = newName;
-                        await offlineDB.saveItems(currentItems);
-                    } else {
-                        const error = await response.text();
-                        alert(`Error updating item: ${error}`);
-                        input.replaceWith(span);
-                    }
-                } else {
-                    // Offline: save locally and queue for sync
-                    item.name = newName;
-                    input.replaceWith(span);
-                    span.textContent = newName;
-                    await offlineDB.saveItems(currentItems);
-                    await offlineDB.addPendingChange('update', item);
-                    await loadPendingChanges();
-                    console.log('Item name edited offline (pending)');
-                }
-            } catch (error) {
-                console.error('Error updating item:', error);
-                alert('Failed to update item');
-                input.replaceWith(span);
-            }
-        } else {
-            input.replaceWith(span);
-        }
+    const newName = document.getElementById('edit-name').value.trim();
+    const newCoop = document.getElementById('edit-coop-url').value.trim();
+    const newIca = document.getElementById('edit-ica-url').value.trim();
+    const sortingId = parseInt(document.getElementById('edit-sorting-id').value, 10);
+
+    if (!newName) return alert("Name cannot be empty");
+
+    const updatedItem = {
+        name: newName,
+        available: item.available,
+        coop_url: newCoop,
+        ica_url: newIca,
+        sorting_id: sortingId
     };
 
-    input.addEventListener('blur', saveChanges);
-    input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            saveChanges();
-        } else if (e.key === 'Escape') {
-            input.replaceWith(span);
+    try {
+        if (isOnline) {
+            const response = await fetch(`${API_URL}/items/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updatedItem)
+            });
+
+            if (response.ok) {
+                Object.assign(item, updatedItem);
+                await offlineDB.saveItems(currentItems);
+            } else {
+                alert(`Error updating item: ${await response.text()}`);
+            }
+        } else {
+            // Offline fallback
+            Object.assign(item, updatedItem);
+            await offlineDB.saveItems(currentItems);
+            await offlineDB.addPendingChange('update', item);
+            await loadPendingChanges();
         }
-    });
+    } catch (error) {
+        console.error('Error updating item:', error);
+    }
+
+    closeEditModal();
+    renderItems(); // Re-render the list to show the links and new name
 }
 
 // Handle real-time search
@@ -332,7 +399,19 @@ async function addNewItem() {
             renderItems();
             await loadPendingChanges();
         } else {
-            alert('Failed to add item');
+            // If online request failed, switch to offline and save
+            console.warn('Network request failed, switching to offline mode');
+            goOffline();
+
+            // Fallback: save offline even if something failed
+            const tempItem = { ...newItem, id: 'temp_' + Date.now() };
+            currentItems.push(tempItem);
+            await offlineDB.saveItems(currentItems);
+            await offlineDB.addPendingChange('add', tempItem);
+            searchInput.value = '';
+            currentSearchTerm = '';
+            renderItems();
+            await loadPendingChanges();
         }
     }
 }
@@ -352,7 +431,10 @@ async function toggleItemStatus(id, available) {
                 },
                 body: JSON.stringify({
                     name: item.name,
-                    available: available
+                    available: available,
+                    coop_url: item.coop_url || '',
+                    ica_url: item.ica_url || '',
+                    sorting_id: item.sorting_id || 0
                 })
             });
 
@@ -373,6 +455,13 @@ async function toggleItemStatus(id, available) {
     } catch (error) {
         console.error('Error updating item:', error);
         if (!isOnline) {
+        }
+
+        // If we were online but failed, switch to offline and save
+        if (isOnline) {
+            console.warn('Network request failed, switching to offline mode');
+            goOffline();
+
             // Ensure offline changes are still saved
             const itemIndex = currentItems.findIndex(item => item.id === id);
             if (itemIndex !== -1) {
@@ -435,7 +524,19 @@ async function deleteItem(id, name) {
                 await loadPendingChanges();
             }
         } else {
-            alert('Failed to delete item');
+            console.warn('Network request failed, switching to offline mode');
+            goOffline();
+
+            // Fallback: ensure offline delete is still saved
+            const itemIndex = currentItems.findIndex(item => item.id === id);
+            if (itemIndex !== -1) {
+                const item = currentItems[itemIndex];
+                currentItems.splice(itemIndex, 1);
+                await offlineDB.saveItems(currentItems);
+                await offlineDB.addPendingChange('delete', item);
+                renderItems();
+                await loadPendingChanges();
+            }
         }
     }
 }

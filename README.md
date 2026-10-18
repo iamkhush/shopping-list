@@ -17,8 +17,8 @@ The application registers a Service Worker to enable offline functionality. The 
 
 - `GET /api/items` - Get all items
 - `POST /api/items` - Add new item
-- `PUT /api/items/{name}` - Update item status
-- `DELETE /api/items/{name}` - Delete item
+- `PUT /api/items/{id}` - Update item status
+- `DELETE /api/items/{id}` - Delete item
 
 ## Deployment Guide
 
@@ -164,6 +164,7 @@ go mod init shopping-list
 go get -u github.com/gorilla/mux
 go get -u github.com/lib/pq
 go get -u github.com/joho/godotenv
+go get -u github.com/DATA-DOG/go-sqlmock
 go run main.go
 ```
 

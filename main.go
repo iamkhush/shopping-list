@@ -18,6 +18,9 @@ type Item struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`
 	Available bool   `json:"available"`
+	SortingID int    `json:"sorting_id"`
+	CoopURL   string `json:"coop_url"`
+	IcaURL    string `json:"ica_url"`
 }
 
 var db *sql.DB
@@ -49,7 +52,10 @@ func initDB() {
 	CREATE TABLE IF NOT EXISTS items (
 		id BIGSERIAL PRIMARY KEY,
 		name TEXT UNIQUE,
-		available BOOLEAN
+		available BOOLEAN,
+		sorting_id INTEGER DEFAULT 0,
+		coop_url TEXT DEFAULT '',
+		ica_url TEXT DEFAULT ''
 	)`)
 		if err != nil {
 			log.Fatal(err)
@@ -58,7 +64,16 @@ func initDB() {
 }
 
 func getItems(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT id, name, available FROM items")
+	rows, err := db.Query(`
+		SELECT 
+			id, 
+			name, 
+			available, 
+			COALESCE(sorting_id, 0), 
+			COALESCE(coop_url, ''), 
+			COALESCE(ica_url, '') 
+		FROM items
+	`)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -68,7 +83,7 @@ func getItems(w http.ResponseWriter, r *http.Request) {
 	var items []Item
 	for rows.Next() {
 		var item Item
-		if err := rows.Scan(&item.ID, &item.Name, &item.Available); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.Available, &item.SortingID, &item.CoopURL, &item.IcaURL); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -96,7 +111,8 @@ func addItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = db.QueryRow("INSERT INTO items (name, available) VALUES ($1, $2) RETURNING id", item.Name, item.Available).Scan(&item.ID)
+	db.QueryRow("INSERT INTO items (name, available, sorting_id, coop_url, ica_url) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+		item.Name, item.Available, item.SortingID, item.CoopURL, item.IcaURL).Scan(&item.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -116,7 +132,8 @@ func updateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := db.Exec("UPDATE items SET name = $1, available = $2 WHERE id = $3", item.Name, item.Available, id)
+	_, err := db.Exec("UPDATE items SET name = $1, available = $2, sorting_id = $3, coop_url = $4, ica_url = $5 WHERE id = $6",
+		item.Name, item.Available, item.SortingID, item.CoopURL, item.IcaURL, id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -172,7 +189,7 @@ func main() {
 		log.Println("Serving index.html")
 		http.ServeFile(w, r, "index.html")
 	}).Methods("GET")
-	
+
 	// Serve sw.js at root of subrouter
 	subrouter.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {
 		log.Println("Serving sw.js")

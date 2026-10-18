@@ -96,15 +96,15 @@
       become: yes
       tags: static
 
-    - name: Create static files directory
-      file:
-        path: "{{ static_root }}"
-        state: directory
-        owner: "{{ app_user }}"
-        group: "{{ nginx_user }}"
-        mode: '0755'
-      become: yes
-      tags: static
+    # - name: Create static files directory
+    #   file:
+    #     path: "{{ static_root }}"
+    #     state: directory
+    #     owner: "{{ app_user }}"
+    #     group: "{{ nginx_user }}"
+    #     mode: '0755'
+    #   become: yes
+    #   tags: static
 
     - name: Copy static files
       copy:

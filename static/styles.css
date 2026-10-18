@@ -396,4 +396,35 @@ h1 {
     .pending-text {
         font-size: 0.85rem;
     }
+}/* Check Connection Button */
+.check-connection-btn {
+    display: block;
+    width: 100%;
+    max-width: 300px;
+    margin: 0.5rem auto 1rem;
+    padding: 0.5rem;
+    background-color: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    text-align: center;
+    transition: background-color 0.3s;
+}
+
+.check-connection-btn:hover:not(:disabled) {
+    background-color: #1976D2;
+}
+
+.check-connection-btn:disabled {
+    background-color: #90caf9;
+    cursor: not-allowed;
+}
+
+/* Mobile specific adjustment for check button */
+@media (max-width: 600px) {
+    .check-connection-btn {
+        margin-bottom: 0.75rem;
+    }
 }

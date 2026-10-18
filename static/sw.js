@@ -72,37 +72,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // API requests: network-first strategy (try server, fallback to cache)
+  // API requests: Network-only strategy
+  // We want the app to handle network failures, so we don't return a cached response here.
+  // The app will catch the network error and switch to offline mode (IndexedDB).
   if (url.pathname.includes('/shopping-list/api')) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          // Cache successful API responses
-          if (response.status === 200) {
-            const responseClone = response.clone();
-            caches.open(API_CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
-          }
-          return response;
-        })
-        .catch(() => {
-          // Fallback to cache when offline
-          return caches.match(event.request).then((cachedResponse) => {
-            if (cachedResponse) {
-              console.log('Service Worker: Serving from cache (offline):', url.pathname);
-              return cachedResponse;
-            }
-            // If no cache, return offline error response
-            return new Response(JSON.stringify({ error: 'Offline - no cached data' }), {
-              status: 503,
-              statusText: 'Service Unavailable',
-              headers: { 'Content-Type': 'application/json' }
-            });
-          });
-        })
-    );
-    return;
+    return; // Let the browser handle it (network only)
   }
 
   // Static assets: cache-first strategy
